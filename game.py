@@ -1,202 +1,225 @@
-import os
-import time
-import random
+# game.py - Pygame GUI with Level Select, Hidden Traps, Replayable + Flash Animation
+import pygame
+import sys
 import maze as mz
 import player as pl
+import random
+import time
 
-def clear():
-    os.system('cls' if os.name == 'nt' else 'clear')
+TILE_SIZE = 60
+ROWS, COLS = mz.ROWS, mz.COLS
+WIDTH, HEIGHT = COLS * TILE_SIZE, ROWS * TILE_SIZE + 80
+FONT_SIZE = 20
 
-MAZE_ROWS = mz.ROWS
-MAZE_COLS = mz.COLS
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+
+pygame.init()
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Maze Adventure")
+clock = pygame.time.Clock()
+font = pygame.font.SysFont("arial", FONT_SIZE)
+
+# Load images
+try:
+    player_img = pygame.image.load("assets/player.png")
+    wall_img = pygame.image.load("assets/maze.png")
+    trap_img = pygame.image.load("assets/trap.png")
+    goal_img = pygame.image.load("assets/goal.png")
+except Exception as e:
+    print("Error loading images:", e)
+    pygame.quit()
+    sys.exit()
+
+player_img = pygame.transform.scale(player_img, (TILE_SIZE, TILE_SIZE))
+wall_img = pygame.transform.scale(wall_img, (TILE_SIZE, TILE_SIZE))
+trap_img = pygame.transform.scale(trap_img, (TILE_SIZE, TILE_SIZE))
+goal_img = pygame.transform.scale(goal_img, (TILE_SIZE, TILE_SIZE))
+
+hint_text = ""
+current_level = 1
+max_level = 5
 
 def set_trap_count(level):
-    if level == 1: return 3
-    if level == 2: return 5
-    if level == 3: return 7
-    if level == 4: return 9
-    if level >= 5: return 10
-    return 5
+    return min(3 + (level - 1) * 2, 10)
 
-def display_loading_screen():
-    clear()
-    print("Loading Maze Adventure...")
-    art = [
-        "  M M M   A A A   ZZZZZ  EEEEE  ", "  MM MM  A     A     Z   E      ",
-        "  M M M  AAAAAAA    Z    EEEEE  ", "  M   M  A     A   Z     E      ",
-        "  M   M  A     A  ZZZZZ  EEEEE  "
-    ]
-    for line in art: print(line); time.sleep(0.2)
-    print("\n" * 2 + "Get ready!"); time.sleep(2)
-
-def draw_main_menu():
-    clear(); print("=== MAZE ADVENTURE ===\n\nSelect Level:")
-    levels_display = ["1. Level 1 (Easy)", "2. Level 2 (Medium)", "3. Level 3 (Hard)",
-                      "4. Level 4 (Very Hard)", "5. Level 5 (Expert)"]
-    for item in levels_display: print(item)
-    print("\nQ. Quit Game")
-    while True:
-        choice = input("Enter your choice (1-5 or Q): ").strip().lower()
-        if choice.isdigit() and 1 <= int(choice) <= 5: return int(choice)
-        elif choice == 'q': return None
-        else: print("Invalid choice.")
-
-def get_direction_str(current_pos, next_pos):
-    dr, dc = next_pos[0] - current_pos[0], next_pos[1] - current_pos[1]
+def get_direction_str(curr, nxt):
+    dr, dc = nxt[0] - curr[0], nxt[1] - curr[1]
     if dr == -1: return "UP"
     if dr == 1: return "DOWN"
     if dc == -1: return "LEFT"
     if dc == 1: return "RIGHT"
-    return "an unknown direction"
+    return "UNKNOWN"
 
-def print_maze_state(maze_layout, player_obj, goal_pos, current_traps, reveal_traps=False, level=1):
-    player_r, player_c = player_obj.get_position()
-    clear(); print(f"--- MAZE - Level {level} ---")
-    for r in range(MAZE_ROWS):
-        line = ''
-        for c in range(MAZE_COLS):
+def flash_screen(color=(255, 255, 0), flashes=3, delay=100):
+    for _ in range(flashes):
+        screen.fill(color)
+        pygame.display.flip()
+        pygame.time.delay(delay)
+        screen.fill(WHITE)
+        pygame.display.flip()
+        pygame.time.delay(delay)
+
+def draw_popup_card(lines, width=400, height=120, bgcolor=(240, 240, 240), border_color=BLACK):
+    x = (WIDTH - width) // 2
+    y = (HEIGHT - height) // 2
+    rect = pygame.Rect(x, y, width, height)
+    pygame.draw.rect(screen, bgcolor, rect)
+    pygame.draw.rect(screen, border_color, rect, 2)
+
+    for i, line in enumerate(lines):
+        text = font.render(line, True, BLACK)
+        text_rect = text.get_rect(center=(WIDTH // 2, y + 25 + i * 25))
+        screen.blit(text, text_rect)
+
+def draw_maze(maze, player, goal, traps, reveal_traps=False):
+    screen.fill(WHITE)
+    for r in range(ROWS):
+        for c in range(COLS):
+            x, y = c * TILE_SIZE, r * TILE_SIZE + 80
             pos = (r, c)
-            if pos == (player_r, player_c): line += pl.PLAYER_SYMBOL
-            elif pos == goal_pos: line += mz.GOAL
-            elif pos in current_traps: line += mz.TRAP if reveal_traps else mz.PATH
-            else: line += maze_layout[r][c]
-            line += ' '
-        print(line)
-    print("-" * (MAZE_COLS * 2))
-    print("Controls: W (Up), A (Left), S (Down), D (Right)")
-    print("          H (Hint), Q (Quit Level)")
+            rect = pygame.Rect(x, y, TILE_SIZE, TILE_SIZE)
 
-def play_level(current_level, game_maze, game_player, goal_position, trap_locations):
-    game_over = False
+            if maze[r][c] == mz.WALL:
+                screen.blit(wall_img, rect)
+            else:
+                pygame.draw.rect(screen, WHITE, rect)
+                if pos == goal:
+                    screen.blit(goal_img, rect)
+                if reveal_traps and pos in traps:
+                    screen.blit(trap_img, rect)
+                if pos == player.get_position():
+                    screen.blit(player_img, rect)
+
+    info = f"Level {current_level} | Arrows: Move | H: Hint | Q: Quit"
+    screen.blit(font.render(info, True, BLACK), (10, 10))
+    if hint_text:
+        screen.blit(font.render(hint_text, True, BLACK), (10, 35))
+
+def move_player(maze, player, dr, dc):
+    global hint_text
+    r, c = player.get_position()
+    nr, nc = r + dr, c + dc
+    if 0 <= nr < ROWS and 0 <= nc < COLS and maze[nr][nc] != mz.WALL:
+        player.set_position(nr, nc)
+        hint_text = ""
+
+def show_hint(maze, traps, player, goal):
+    global hint_text
+    pos = player.get_position()
+    algorithms = ["BFS", "Dijkstra", "DFS"]
+    paths = {}
+    for name in algorithms:
+        path = getattr(mz, f"{name.lower()}_pathfinding")(maze, pos, goal, traps, ROWS, COLS)
+        if path:
+            paths[name] = path
+    if not paths:
+        hint_text = "No path found."
+        return
+    best = sorted(paths.items(), key=lambda x: len(x[1]))
+    for name in ["BFS", "Dijkstra", "DFS"]:
+        if name in dict(best):
+            best_name = name
+            best_path = dict(best)[name]
+            break
+    direction = get_direction_str(pos, best_path[0])
+    hint_text = f"Hint ({best_name}): move {direction}"
+
+def play_level(level):
+    global hint_text, current_level
+    maze = mz.generate_maze(ROWS, COLS)
+    player = pl.Player(1, 1)
+    goal = mz.place_goal(maze, player.get_position(), ROWS, COLS)
+    traps = mz.place_traps_safe(maze, set_trap_count(level), player.get_position(), goal, ROWS, COLS)
     win = False
-    
-    while not game_over:
-        print_maze_state(game_maze, game_player, goal_position, trap_locations, reveal_traps=win, level=current_level)
-        if win:
-            print("\n🎉 Congratulations! You reached the GOAL! 🎉")
-            time.sleep(1)
-            return "win"
 
-        action = input("Your move (W/A/S/D/H/Q): ").strip().lower()
-
-        if action == 'q': return "quit_level"
-        
-        elif action == 'h':
-            print("\nCalculating hint using DFS, BFS, and Dijkstra...")
-            player_pos = game_player.get_position()
-            
-            algo_paths = {} 
-            
-            path_dfs = mz.dfs_pathfinding(game_maze, player_pos, goal_position, trap_locations, MAZE_ROWS, MAZE_COLS)
-            if path_dfs is not None: algo_paths['DFS'] = path_dfs
-            
-            path_bfs = mz.bfs_pathfinding(game_maze, player_pos, goal_position, trap_locations, MAZE_ROWS, MAZE_COLS)
-            if path_bfs is not None: algo_paths['BFS'] = path_bfs
-            
-            path_dijkstra = mz.dijkstra_pathfinding(game_maze, player_pos, goal_position, trap_locations, MAZE_ROWS, MAZE_COLS)
-            if path_dijkstra is not None: algo_paths['Dijkstra'] = path_dijkstra
-
-            if not algo_paths:
-                print("No path to the goal found by any algorithm. You might be trapped!")
-            else:
-                shortest_len = float('inf')
-                candidate_algos = [] 
-
-                for name, path in algo_paths.items():
-                    p_len = len(path)
-                    if p_len < shortest_len:
-                        shortest_len = p_len
-                        candidate_algos = [(p_len, name, path)]
-                    elif p_len == shortest_len:
-                        candidate_algos.append((p_len, name, path))
-                
-                final_best_algo_name = None
-                final_best_path = None
-
-                if candidate_algos:
-                    algo_preference_order = ['BFS', 'Dijkstra', 'DFS']
-                    algo_pref_map = {name: i for i, name in enumerate(algo_preference_order)}
-                    
-                    candidate_algos.sort(key=lambda x: algo_pref_map.get(x[1], 99))
-                    
-                    final_best_algo_name = candidate_algos[0][1]
-                    final_best_path = candidate_algos[0][2]
-                
-                if shortest_len == 0 : 
-                     print("You are already at the goal!")
-                elif final_best_path and len(final_best_path) > 0: 
-                    next_step = final_best_path[0]
-                    direction = get_direction_str(player_pos, next_step)
-                    print(f"HINT (via {final_best_algo_name}, length {shortest_len}): Try moving {direction}.")
-                else: 
-                    print("No clear hint available or you are trapped.")
-
-            input("Press Enter to continue...")
-            continue
-
-        move_map = {'w': (-1, 0), 's': (1, 0), 'a': (0, -1), 'd': (0, 1)}
-        if action in move_map:
-            dr, dc = move_map[action]
-            curr_r, curr_c = game_player.get_position()
-            next_r, next_c = curr_r + dr, curr_c + dc
-
-            if 0 <= next_r < MAZE_ROWS and 0 <= next_c < MAZE_COLS and \
-               game_maze[next_r][next_c] != mz.WALL:
-                game_player.set_position(next_r, next_c)
-                player_new_pos = game_player.get_position()
-
-                if player_new_pos == goal_position:
-                    win = True; continue
-                if player_new_pos in trap_locations:
-                    print_maze_state(game_maze, game_player, goal_position, trap_locations, reveal_traps=True, level=current_level)
-                    print("\n💥 Oh no! You stepped on a TRAP! Game Over. 💥")
-                    time.sleep(1); game_over = True; return "lose"
-            else:
-                print("You can't move there!"); input("Press Enter to continue...")
-        else:
-            print("Invalid input."); input("Press Enter to continue...")
-    return "error" 
-
-def display_play_again_prompt(won_level):
-    prompt = "Play Next Level? (y/n): " if won_level else "Play Again? (y/n): "
     while True:
-        choice = input(prompt).strip().lower()
-        if choice == 'y': return True
-        elif choice == 'n': return False
-        else: print("Invalid input.")
+        draw_maze(maze, player, goal, traps, reveal_traps=win)
+        if win:
+            draw_popup_card([
+                "You win!",
+                "Press N for next level,",
+                "R to replay,",
+                "M for menu."
+            ])
+        pygame.display.flip()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_q:
+                    pygame.quit(); sys.exit()
+                if not win:
+                    if event.key == pygame.K_h:
+                        show_hint(maze, traps, player, goal)
+                    elif event.key == pygame.K_UP:
+                        move_player(maze, player, -1, 0)
+                    elif event.key == pygame.K_DOWN:
+                        move_player(maze, player, 1, 0)
+                    elif event.key == pygame.K_LEFT:
+                        move_player(maze, player, 0, -1)
+                    elif event.key == pygame.K_RIGHT:
+                        move_player(maze, player, 0, 1)
+                else:
+                    if event.key == pygame.K_r:
+                        return "replay"
+                    elif event.key == pygame.K_m:
+                        return "menu"
+                    elif event.key == pygame.K_n:
+                        return "next"
+
+        if not win:
+            if player.get_position() in traps:
+                flash_screen((255, 0, 0))
+                draw_maze(maze, player, goal, traps, reveal_traps=True)
+                pygame.display.flip()
+                time.sleep(2)
+                return "lose"
+            if player.get_position() == goal:
+                flash_screen((0, 255, 0))
+                win = True
+                hint_text = ""
+        clock.tick(10)
+
+def show_level_menu():
+    global current_level
+    selecting = True
+    while selecting:
+        screen.fill(WHITE)
+        screen.blit(font.render("Select Level 1-5 (number keys) | Q to Quit", True, BLACK), (10, 10))
+        for i in range(1, 6):
+            text = font.render(f"Level {i}", True, BLACK)
+            screen.blit(text, (10, 40 + i * 30))
+        pygame.display.flip()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_q:
+                    pygame.quit(); sys.exit()
+                elif pygame.K_1 <= event.key <= pygame.K_5:
+                    current_level = event.key - pygame.K_0
+                    selecting = False
 
 def main():
-    display_loading_screen()
-    current_level = 0; keep_playing = True
-    while keep_playing:
-        if current_level == 0:
-            chosen_level = draw_main_menu()
-            if chosen_level is None: keep_playing = False; break
-            current_level = chosen_level
-        
-        num_traps = set_trap_count(current_level)
-        print(f"\nGenerating Level {current_level} with {num_traps} traps..."); time.sleep(0.5)
-        
-        maze_layout = mz.generate_maze(MAZE_ROWS, MAZE_COLS)
-        player_obj = pl.Player(1, 1); maze_layout[1][1] = mz.PATH
-        goal_coords = mz.place_goal(maze_layout, player_obj.get_position(), MAZE_ROWS, MAZE_COLS)
-        traps = mz.place_traps_safe(maze_layout, num_traps, player_obj.get_position(), goal_coords, MAZE_ROWS, MAZE_COLS)
-        
-        level_outcome = play_level(current_level, maze_layout, player_obj, goal_coords, traps)
-
-        if level_outcome == "win":
-            if not display_play_again_prompt(True): keep_playing = False
-            else:
-                current_level += 1
-                if current_level > 5: print("All levels beaten! Resetting."); current_level = 0
-        elif level_outcome == "lose":
-            if not display_play_again_prompt(False): keep_playing = False
-        elif level_outcome == "quit_level":
-            print("Returning to Main Menu..."); current_level = 0; time.sleep(1)
-        
-        if current_level == 0 and keep_playing: print("Loading Main Menu..."); time.sleep(1)
-
-    clear(); print("Thanks for playing Maze Adventure!")
+    global current_level
+    show_level_menu()
+    while True:
+        outcome = play_level(current_level)
+        if outcome == "next":
+            current_level += 1
+            if current_level > max_level:
+                show_level_menu()
+        elif outcome == "win":
+            pass  
+        elif outcome == "lose":
+            show_level_menu()
+        elif outcome == "replay":
+            continue
+        elif outcome == "menu":
+            show_level_menu()
 
 if __name__ == '__main__':
     main()
