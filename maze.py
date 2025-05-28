@@ -10,22 +10,18 @@ TRAP = 'T'
 
 
 def generate_maze(r_max, c_max):
-    maze = [[WALL for _ in range(c_max)] for _ in range(r_max)]
+    while True:
+        maze = [[PATH if random.random() > 0.3 else WALL for _ in range(c_max)] for _ in range(r_max)]
+        for r in range(r_max):
+            for c in range(c_max):
+                if r == 0 or c == 0 or r == r_max - 1 or c == c_max - 1:
+                    maze[r][c] = WALL
+        maze[1][1] = PATH
+        goal_pos = place_goal(maze, (1, 1), r_max, c_max)
 
-    def carve(x, y):
-        dirs = [(0, 1), (1, 0), (0, -1), (-1, 0)]
-        random.shuffle(dirs)
-        for dx, dy in dirs:
-            wall_x, wall_y = x + dx, y + dy
-            next_x, next_y = x + 2 * dx, y + 2 * dy
-            if 0 < next_x < r_max - 1 and 0 < next_y < c_max - 1 and maze[next_x][next_y] == WALL:
-                maze[wall_x][wall_y] = PATH
-                maze[next_x][next_y] = PATH
-                carve(next_x, next_y)
-
-    maze[1][1] = PATH
-    carve(1, 1)
-    return maze
+        path = bfs_pathfinding(maze, (1, 1), goal_pos, set(), r_max, c_max)
+        if path and len(path) > 2:
+            return maze
 
 
 def place_goal(maze_layout, start_pos_tuple, r_max, c_max):
