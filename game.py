@@ -13,6 +13,7 @@ FONT_SIZE = 20
 
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
+YELLOW = (255, 255, 0)
 
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -184,13 +185,21 @@ def play_level(level):
 
 def show_level_menu():
     global current_level
+    selected = 0
     selecting = True
     while selecting:
         screen.fill(WHITE)
-        screen.blit(font.render("Select Level 1-5 (number keys) | Q to Quit", True, BLACK), (10, 10))
+        screen.blit(font.render("Select Level 1-5 (arrow keys + Enter) | Q to Quit", True, BLACK), (10, 10))
         for i in range(1, 6):
+            y = 40 + i * 30
             text = font.render(f"Level {i}", True, BLACK)
-            screen.blit(text, (10, 40 + i * 30))
+            if selected == i - 1:
+                box = text.get_rect(topleft=(10, y))
+                box.inflate_ip(10, 10)
+                pygame.draw.rect(screen, YELLOW, box)
+                screen.blit(text, (10, y))
+            else:
+                screen.blit(text, (10, y))
         pygame.display.flip()
 
         for event in pygame.event.get():
@@ -199,8 +208,12 @@ def show_level_menu():
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_q:
                     pygame.quit(); sys.exit()
-                elif pygame.K_1 <= event.key <= pygame.K_5:
-                    current_level = event.key - pygame.K_0
+                elif event.key == pygame.K_DOWN:
+                    selected = (selected + 1) % 5
+                elif event.key == pygame.K_UP:
+                    selected = (selected - 1) % 5
+                elif event.key == pygame.K_RETURN:
+                    current_level = selected + 1
                     selecting = False
 
 def main():
