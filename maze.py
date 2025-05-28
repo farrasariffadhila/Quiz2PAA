@@ -6,22 +6,56 @@ ROWS, COLS = 11, 21
 WALL = '#'
 PATH = ' '
 GOAL = 'E'
-TRAP = 'T'
+
+
+def _get_random_unvisited_neighbor(r, c, visited, r_max, c_max):
+    neighbors = []
+    directions = [(0, 2), (2, 0), (0, -2), (-2, 0)]
+    random.shuffle(directions)
+    for dr, dc in directions:
+        nr, nc = r + dr, c + dc
+        if (0 <= nr < r_max and 0 <= nc < c_max and (nr, nc) not in visited):
+            neighbors.append((nr, nc, r + dr//2, c + dc//2))
+    if neighbors:
+        return random.choice(neighbors)
+    return None
 
 
 def generate_maze(r_max, c_max):
-    while True:
-        maze = [[PATH if random.random() > 0.3 else WALL for _ in range(c_max)] for _ in range(r_max)]
-        for r in range(r_max):
-            for c in range(c_max):
-                if r == 0 or c == 0 or r == r_max - 1 or c == c_max - 1:
-                    maze[r][c] = WALL
-        maze[1][1] = PATH
-        goal_pos = place_goal(maze, (1, 1), r_max, c_max)
-
-        path = bfs_pathfinding(maze, (1, 1), goal_pos, set(), r_max, c_max)
-        if path and len(path) > 2:
-            return maze
+    maze = [[WALL for _ in range(c_max)] for _ in range(r_max)]
+    start = (1, 1)
+    maze[start[0]][start[1]] = PATH
+    stack = [start]
+    visited = {start}
+    while stack:
+        current_r, current_c = stack[-1]
+        neighbor = _get_random_unvisited_neighbor(current_r, current_c, visited, r_max, c_max)
+        if neighbor:
+            next_r, next_c, wall_r, wall_c = neighbor
+            maze[next_r][next_c] = PATH
+            maze[wall_r][wall_c] = PATH
+            visited.add((next_r, next_c))
+            stack.append((next_r, next_c))
+        else:
+            stack.pop()
+    extra_connections = max(2, (r_max * c_max) // 20)
+    attempts = 0
+    while extra_connections > 0 and attempts < 1000:
+        r = random.randint(1, r_max - 2)
+        c = random.randint(1, c_max - 2)
+        if maze[r][c] == WALL:
+            if maze[r-1][c] == PATH and maze[r+1][c] == PATH and maze[r][c-1] == WALL and maze[r][c+1] == WALL:
+                maze[r][c] = PATH
+                extra_connections -= 1
+            elif maze[r][c-1] == PATH and maze[r][c+1] == PATH and maze[r-1][c] == WALL and maze[r+1][c] == WALL:
+                maze[r][c] = PATH
+                extra_connections -= 1
+        attempts += 1
+    goal_pos = place_goal(maze, start, r_max, c_max)
+    path = bfs_pathfinding(maze, start, goal_pos, set(), r_max, c_max)
+    if path and len(path) > 2:
+        return maze
+    return generate_maze(r_max, c_max)
 
 
 def place_goal(maze_layout, start_pos_tuple, r_max, c_max):
@@ -50,9 +84,7 @@ def _get_valid_neighbors_for_pathfinding(position, maze_layout, existing_obstacl
     valid_neighbors = []
     for dr, dc in possible_moves:
         nr, nc = row + dr, col + dc
-        if 0 <= nr < r_max and 0 <= nc < c_max and \
-           maze_layout[nr][nc] != WALL and \
-           (nr, nc) not in existing_obstacles:
+        if 0 <= nr < r_max and 0 <= nc < c_max and maze_layout[nr][nc] != WALL and (nr, nc) not in existing_obstacles:
             valid_neighbors.append((nr, nc))
     return valid_neighbors
 
@@ -64,7 +96,6 @@ def _reconstruct_path_from_came_from(came_from, start_pos, goal_pos):
         return []
     if current not in came_from:
         return None
-
     while current != start_pos:
         path.append(current)
         if current not in came_from:
@@ -141,10 +172,7 @@ def bfs_for_validation(maze_layout, traps_to_avoid, start_pos, goal_pos, r_max, 
         if (r, c) == goal_pos: return path
         for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             nr, nc = r + dr, c + dc
-            if 0 <= nr < r_max and 0 <= nc < c_max and \
-               maze_layout[nr][nc] != WALL and \
-               (nr, nc) not in traps_to_avoid and \
-               (nr, nc) not in visited:
+            if 0 <= nr < r_max and 0 <= nc < c_max and maze_layout[nr][nc] != WALL and (nr, nc) not in traps_to_avoid and (nr, nc) not in visited:
                 visited.add((nr, nc))
                 queue.append(((nr, nc), path + [(dr,dc)]))
     return None
@@ -171,22 +199,3 @@ def place_traps_safe(maze_layout, trap_count, start_pos, goal_pos, r_max, c_max)
                 break
         if not trap_candidate_placed: pass
     return placed_traps
-
-
-def heuristic(a, b): return abs(a[0] - b[0]) + abs(a[1] - b[1])
-def a_star_search(maze_layout, start_pos, goal_pos, existing_obstacles, r_max, c_max):
-    open_set = []; heapq.heappush(open_set, (0, start_pos))
-    came_from = {}; g_score = { (r,c): float('inf') for r in range(r_max) for c in range(c_max) }
-    g_score[start_pos] = 0; f_score = { (r,c): float('inf') for r in range(r_max) for c in range(c_max) }
-    f_score[start_pos] = heuristic(start_pos, goal_pos); open_set_hash = {start_pos}
-    while open_set:
-        _, current_p = heapq.heappop(open_set); open_set_hash.remove(current_p)
-        if current_p == goal_pos: return _reconstruct_path_from_came_from(came_from, start_pos, goal_pos)
-        for neighbor_p in _get_valid_neighbors_for_pathfinding(current_p, maze_layout, existing_obstacles, r_max, c_max):
-            tentative_g_score = g_score[current_p] + 1
-            if tentative_g_score < g_score[neighbor_p]:
-                came_from[neighbor_p] = current_p; g_score[neighbor_p] = tentative_g_score
-                f_score[neighbor_p] = tentative_g_score + heuristic(neighbor_p, goal_pos)
-                if neighbor_p not in open_set_hash:
-                    heapq.heappush(open_set, (f_score[neighbor_p], neighbor_p)); open_set_hash.add(neighbor_p)
-    return None
