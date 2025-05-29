@@ -114,11 +114,12 @@ def move_player(maze_data, player_obj, dr, dc):
 
 def show_hint(maze_data, trap_list, player_obj, goal_pos):
     global hint_text
-    import time
     pos = player_obj.get_position()
+    import time
     algorithms = ["BFS", "Dijkstra", "DFS"]
     paths = {}
     times = {}
+    costs = {}
     for name in algorithms:
         path_finding_func = getattr(mz, f"{name.lower()}_pathfinding")
         start_time = time.perf_counter()
@@ -126,6 +127,9 @@ def show_hint(maze_data, trap_list, player_obj, goal_pos):
         elapsed = (time.perf_counter() - start_time) * 1000  # ms
         if path:
             paths[name] = path
+            costs[name] = len(path)
+        else:
+            costs[name] = None
         times[name] = elapsed
     if not paths:
         hint_text = "Hint: No path found (traps might block)."
@@ -143,7 +147,10 @@ def show_hint(maze_data, trap_list, player_obj, goal_pos):
     if chosen_path:
         direction = get_direction_str(pos, chosen_path[0])
         hint_text = f"Hint ({chosen_algo_name}): move {direction} | "
-        hint_text += " | ".join([f"{algo}: {times[algo]:.2f}ms" for algo in algorithms])
+        hint_text += " | ".join([
+            f"{algo}: {times[algo]:.2f}ms, cost: {costs[algo] if costs[algo] is not None else '-'}"
+            for algo in algorithms
+        ])
     else:
         hint_text = "Hint: No path found."
 
